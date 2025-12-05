@@ -78,13 +78,23 @@ class NPUWorker:
     @torch.inference_mode()
     def execute_model(self, reqs: list[OmniDiffusionRequest], od_config: OmniDiffusionConfig) -> DiffusionOutput:
         """
-        Execute a forward pass.
+        Execute a forward pass for all requests.
         """
         assert self.pipeline is not None
-        # TODO: dealing with first req for now
-        req = reqs[0]
-        output = self.pipeline.forward(req)
-        return output
+        # Process all requests and collect outputs
+        outputs = []
+        for req in reqs:
+            output = self.pipeline.forward(req)
+            outputs.append(output)
+        # Concatenate all outputs into a single tensor
+        if outputs:
+            # Assuming each output is a tensor of images
+            combined_output = torch.cat([out.output for out in outputs], dim=0)
+            # Use the post_process_func from the first output
+            post_process_func = outputs[0].post_process_func
+            return DiffusionOutput(output=combined_output, post_process_func=post_process_func)
+        else:
+            return DiffusionOutput(error="No requests to process")
 
 
 class NPUWorkerProc:
