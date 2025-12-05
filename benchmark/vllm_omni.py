@@ -49,9 +49,9 @@ def parse_args() -> argparse.Namespace:
 def main():
 
     args = parse_args()
+
     with open(args.prompt, "r") as f:
         prompts = [line.strip() for line in f.readlines() if line.strip()]
-
 
     device = args.device
     generator = torch.Generator(device=device).manual_seed(args.seed)
@@ -66,7 +66,8 @@ def main():
         vae_use_tiling=vae_use_tiling,
     )
     t0 = time.time()
-    images = omni.generate(
+    images = []
+    for img in omni.generate(
         prompts,
         height=args.height,
         width=args.width,
@@ -75,7 +76,8 @@ def main():
         num_inference_steps=args.num_inference_steps,
         num_images_per_prompt=args.num_images_per_prompt,
         num_outputs_per_prompt=args.num_images_per_prompt,
-    )
+    ):
+        images.append(img)
     total_time = time.time() - t0
     avg_time = total_time / len(images)
     logging.info(f"[Profiler] Total generate time: {total_time:.3f}s")
