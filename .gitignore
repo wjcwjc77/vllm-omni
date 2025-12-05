@@ -229,3 +229,4 @@ configs/development.yaml
 # Docker
 .dockerignore
 Dockerfile.dev
+*.png

@@ -87,7 +87,7 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
     suffix = output_path.suffix or ".png"
     stem = output_path.stem or "vllm_omni_output"
-    if args.num_images_per_prompt <= 1:
+    if len(prompts) <= 1:
         images[0].save(output_path)
         logging.info(f"Saved generated image to {output_path}")
     else:
