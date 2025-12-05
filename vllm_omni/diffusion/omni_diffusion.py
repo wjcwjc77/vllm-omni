@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import logging
+import time
 from dataclasses import fields
 
 from vllm.logger import init_logger
@@ -81,4 +82,7 @@ class OmniDiffusion:
         return self._run_engine(requests)
 
     def _run_engine(self, requests: list[OmniDiffusionRequest]):
-        return self.engine.step(requests)
+        t0 = time.time()
+        result = self.engine.step(requests)
+        logger.info(f"[Profiler] OmniDiffusion._run_engine: {time.time() - t0:.3f}s")
+        return result

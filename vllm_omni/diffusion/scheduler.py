@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import time
+
 import zmq
 from vllm.distributed.device_communicators.shm_broadcast import MessageQueue
 from vllm.logger import init_logger
@@ -50,12 +52,16 @@ class Scheduler:
         """Sends a request to the scheduler and waits for the response."""
         try:
             # Broadcast request to all workers
+            t0 = time.time()
             self.mq.enqueue(requests)
+            logger.info(f"[Profiler] Scheduler.enqueue: {time.time() - t0:.3f}s")
             # Wait for result from Rank 0 (or whoever sends it)
             if self.result_mq is None:
                 raise RuntimeError("Result queue not initialized")
 
+            t1 = time.time()
             output = self.result_mq.dequeue()
+            logger.info(f"[Profiler] Scheduler.dequeue (wait worker): {time.time() - t1:.3f}s")
             return output
         except zmq.error.Again:
             logger.error("Timeout waiting for response from scheduler.")

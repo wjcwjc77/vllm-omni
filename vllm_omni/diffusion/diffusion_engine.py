@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import multiprocessing as mp
+import time
 
 from vllm.logger import init_logger
 
@@ -31,11 +32,16 @@ class DiffusionEngine:
 
     def step(self, requests: list[OmniDiffusionRequest]):
         try:
+            t0 = time.time()
             output = self.add_req_and_wait_for_response(requests)
+            logger.info(f"[Profiler] DiffusionEngine.add_req_and_wait: {time.time() - t0:.3f}s")
             if output.error:
                 raise Exception(f"{output.error}")
+            t1 = time.time()
+            result = self.post_process_func(output.output)
+            logger.info(f"[Profiler] DiffusionEngine.post_process: {time.time() - t1:.3f}s")
             logger.info("Generation completed successfully.")
-            return self.post_process_func(output.output)
+            return result
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             return None

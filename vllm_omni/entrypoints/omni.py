@@ -22,7 +22,7 @@ def omni_snapshot_download(model_id) -> str:
         return _dummy_snapshot_download(model_id)
 
 
-class Omni:
+class  Omni:
     """Unified entrypoint for both LLM and Diffusion models for better usability."""
 
     def __init__(self, *args, **kwargs):

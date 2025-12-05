@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import multiprocessing as mp
 import os
+import time
 
 import torch
 import zmq
@@ -77,7 +78,9 @@ class GPUWorker:
         assert self.pipeline is not None
         # TODO: dealing with first req for now
         req = reqs[0]
+        t0 = time.time()
         output = self.pipeline.forward(req)
+        logger.info(f"[Profiler] Worker.execute_model (pipeline.forward): {time.time() - t0:.3f}s")
         return output
 
 
