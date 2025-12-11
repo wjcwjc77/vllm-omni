@@ -480,15 +480,53 @@ def _stage_worker(
 
         device_type = detect_device_type()
         set_stage_devices(stage_id, runtime_cfg.get("devices"), device_type=device_type)
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Device setup complete: devices=%s, device_type=%s",
+            stage_id,
+            runtime_cfg.get("devices"),
+            device_type
+        )
     except Exception as e:
         _logging.getLogger(__name__).warning("[Stage-%s] Device setup failed: %s", stage_id, e)
 
     # Init LLM
-    _logging.getLogger(__name__).debug(
-        "[Stage-%s] Initializing engine with args keys=%s", stage_id, list(engine_args.keys())
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ========================================"
+        , stage_id
     )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] INITIALIZING ENGINE", stage_id
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] Model: %s", stage_id, model
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] Engine Args: %s", stage_id, list(engine_args.keys())
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] Runtime Config: %s", stage_id, runtime_cfg
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ========================================"
+        , stage_id
+    )
+
     stage_engine = OmniStageLLM(model=model, **engine_args)
-    _logging.getLogger(__name__).debug("[Stage-%s] Engine initialized", stage_id)
+
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ========================================"
+        , stage_id
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ENGINE INITIALIZED SUCCESSFULLY", stage_id
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] Engine Type: %s", stage_id, type(stage_engine).__name__
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ========================================"
+        , stage_id
+    )
 
     # Initialize OmniConnectors if configured
     connectors = {}
@@ -508,15 +546,59 @@ def _stage_worker(
         pass
 
     # Batch processing loop
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ========================================"
+        , stage_id
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ENTERING BATCH PROCESSING LOOP", stage_id
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] Max Batch Size: %s", stage_id, runtime_cfg.get("max_batch_size", 1)
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] Batch Timeout: %s seconds", stage_id, batch_timeout
+    )
+    _logging.getLogger(__name__).info(
+        "[Stage-%s] ========================================"
+        , stage_id
+    )
+
     while True:
         task = in_q.get()
         _recv_dequeue_ts = _time.time()
         if task is None:
-            _logging.getLogger(__name__).error("[Stage-%s] Received shutdown signal", stage_id)
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] RECEIVED SHUTDOWN SIGNAL", stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
             break
 
         max_batch_size = int(runtime_cfg.get("max_batch_size", 1) or 1)
-        print(f"[Stage-{stage_id}] Max batch size: {max_batch_size}")
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] ========================================"
+            , stage_id
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] RECEIVED NEW TASK", stage_id
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Request ID: %s", stage_id, task.get("request_id")
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Max batch size: %s", stage_id, max_batch_size
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] ========================================"
+            , stage_id
+        )
         batch_tasks: list[dict[str, Any]] = [task]
         start_time = _time.time()
         if max_batch_size > 1:
@@ -542,17 +624,47 @@ def _stage_worker(
                     else:
                         continue
 
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Batch collection complete", stage_id
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Final batch size: %d", stage_id, len(batch_tasks)
+        )
+
         batch_request_ids: list[Any] = []
         batch_engine_inputs: list[Any] = []
         _rx_bytes_by_rid: dict[Any, int] = {}
         _rx_decode_ms_by_rid: dict[Any, float] = {}
         _in_flight_ms_by_rid: dict[Any, float] = {}
+
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] ========================================"
+            , stage_id
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] PROCESSING BATCH INPUTS", stage_id
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Number of tasks: %d", stage_id, len(batch_tasks)
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] ========================================"
+            , stage_id
+        )
+
         for t in batch_tasks:
             rid = t["request_id"]
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] Processing request: %s", stage_id, rid
+            )
             try:
                 sent_ts = float(t.get("sent_ts", None)) if isinstance(t, dict) else None
                 if sent_ts is not None:
                     _in_flight_ms_by_rid[rid] = (_recv_dequeue_ts - sent_ts) * 1000.0
+                    _logging.getLogger(__name__).info(
+                        "[Stage-%s] Request %s: in-flight time = %.2f ms",
+                        stage_id, rid, _in_flight_ms_by_rid[rid]
+                    )
                 else:
                     _in_flight_ms_by_rid[rid] = 0.0
             except Exception:
@@ -560,6 +672,9 @@ def _stage_worker(
 
             # Resolve input data strictly via connectors if payload
             # is larger than shm_threshold_bytes or using other connectors
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] Receiving input via connector for request %s", stage_id, rid
+            )
             ein, _rx_metrics = try_recv_via_connector(
                 task=t,
                 connectors=connectors,
@@ -567,6 +682,9 @@ def _stage_worker(
             )
 
             if ein is None or _rx_metrics is None:
+                _logging.getLogger(__name__).error(
+                    "[Stage-%s] Missing connector payload for request %s", stage_id, rid
+                )
                 raise RuntimeError(
                     f"[Stage-{stage_id}] Missing connector payload for request {rid}. "
                     "Ensure connectors are configured for all incoming edges."
@@ -575,39 +693,108 @@ def _stage_worker(
             if _rx_metrics:
                 _rx_decode_ms_by_rid[rid] = float(_rx_metrics.get("rx_decode_time_ms", 0.0))
                 _rx_bytes_by_rid[rid] = int(_rx_metrics.get("rx_transfer_bytes", 0))
+                _logging.getLogger(__name__).info(
+                    "[Stage-%s] Request %s: rx_bytes=%d, rx_decode_ms=%.2f",
+                    stage_id, rid, _rx_bytes_by_rid[rid], _rx_decode_ms_by_rid[rid]
+                )
 
             batch_request_ids.append(rid)
             if isinstance(ein, list):
                 batch_engine_inputs.extend(ein)
+                _logging.getLogger(__name__).info(
+                    "[Stage-%s] Request %s: input is list with %d items",
+                    stage_id, rid, len(ein)
+                )
             elif isinstance(ein, dict):
                 batch_engine_inputs.append(ein)
+                _logging.getLogger(__name__).info(
+                    "[Stage-%s] Request %s: input is dict", stage_id, rid
+                )
             else:
                 _logging.getLogger(__name__).error("[Stage-%s] Invalid engine input type: %s", stage_id, type(ein))
+
         sampling_params = batch_tasks[0]["sampling_params"]
-        _logging.getLogger(__name__).debug(
-            "[Stage-%s] Received batch size=%d, request_ids=%s",
-            stage_id,
-            len(batch_tasks),
-            batch_request_ids,
+
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] ========================================"
+            , stage_id
         )
-        print("--------------------------------", flush=True)
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] BATCH READY FOR GENERATION", stage_id
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Batch size: %d", stage_id, len(batch_tasks)
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Request IDs: %s", stage_id, batch_request_ids
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Engine inputs: %d", stage_id, len(batch_engine_inputs)
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] Sampling params: temp=%.2f, top_p=%.2f, max_tokens=%d",
+            stage_id, sampling_params.temperature, sampling_params.top_p, sampling_params.max_tokens
+        )
+        _logging.getLogger(__name__).info(
+            "[Stage-%s] ========================================"
+            , stage_id
+        )
+
+        print("==========================================", flush=True)
         print(
-            f"[Stage-{stage_id}] Received batch size={len(batch_tasks)}, request_ids={batch_request_ids}",
+            f"[Stage-{stage_id}] BATCH READY: size={len(batch_tasks)}, req_ids={batch_request_ids}",
             flush=True,
         )
-        print("--------------------------------", flush=True)
+        print("==========================================", flush=True)
         try:
             _batch_seq += 1
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] STARTING GENERATION", stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] Batch ID: %d", stage_id, _batch_seq
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+
             gen_outputs: list[Any] = []
             _gen_t0 = _time.time()
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] Calling stage_engine.generate()", stage_id
+            )
             for ro in stage_engine.generate(batch_engine_inputs, sampling_params, use_tqdm=False):
                 gen_outputs.append(ro)
             _gen_t1 = _time.time()
             _gen_ms = (_gen_t1 - _gen_t0) * 1000.0
+
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] GENERATION COMPLETE", stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] Generation time: %.2f ms", stage_id, _gen_ms
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] Generated outputs: %d", stage_id, len(gen_outputs)
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+
             try:
                 print(
                     f"[Stage-{stage_id}] Generate done: batch={len(batch_tasks)}, "
-                    f"req_ids={batch_request_ids}, gen_ms={_gen_ms:.1f}",
+                    f"req_ids={batch_request_ids}, gen_ms={_gen_ms:.1f}, outputs={len(gen_outputs)}",
                     flush=True,
                 )
             except Exception:
@@ -656,18 +843,43 @@ def _stage_worker(
                 )
 
             # Emit per-request results
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] SENDING OUTPUTS TO DOWNSTREAM", stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] Number of requests: %d", stage_id, len(batch_request_ids)
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+
             for rid in batch_request_ids:
                 r_outputs = req_to_outputs.get(rid, [])
+                _logging.getLogger(__name__).info(
+                    "[Stage-%s] Preparing output for request: %s", stage_id, rid
+                )
                 try:
                     use_shm, payload = maybe_dump_to_shm(r_outputs, shm_threshold_bytes)
+                    _num_tokens = int(count_tokens_from_outputs(r_outputs))
                     _metrics = {
-                        "num_tokens_out": int(count_tokens_from_outputs(r_outputs)),
+                        "num_tokens_out": _num_tokens,
                         "stage_gen_time_ms": _gen_ms,
                         "batch_id": int(_batch_seq),
                         "rx_decode_time_ms": float(_rx_decode_ms_by_rid.get(rid, 0.0)),
                         "rx_transfer_bytes": int(_rx_bytes_by_rid.get(rid, 0)),
                         "rx_in_flight_time_ms": float(_in_flight_ms_by_rid.get(rid, 0.0)),
                     }
+
+                    _logging.getLogger(__name__).info(
+                        "[Stage-%s] Request %s: tokens=%d, use_shm=%s, gen_time=%.2fms",
+                        stage_id, rid, _num_tokens, use_shm, _gen_ms
+                    )
+
                     if _stats_file:
                         compute_and_log_stage_request_stats(
                             _stats_file,
@@ -688,6 +900,9 @@ def _stage_worker(
                                 "metrics": _metrics,
                             }
                         )
+                        _logging.getLogger(__name__).info(
+                            "[Stage-%s] Request %s: Sent via SHM", stage_id, rid
+                        )
                     else:
                         out_q.put(
                             {
@@ -697,7 +912,13 @@ def _stage_worker(
                                 "metrics": _metrics,
                             }
                         )
+                        _logging.getLogger(__name__).info(
+                            "[Stage-%s] Request %s: Sent via queue", stage_id, rid
+                        )
                 except Exception:
+                    _logging.getLogger(__name__).warning(
+                        "[Stage-%s] Request %s: Failed to send with metrics, sending without", stage_id, rid
+                    )
                     out_q.put(
                         {
                             "request_id": rid,
@@ -712,11 +933,21 @@ def _stage_worker(
                             },
                         }
                     )
-                _logging.getLogger(__name__).debug(
-                    "[Stage-%s] Enqueued result for request %s to downstream",
-                    stage_id,
-                    rid,
+                _logging.getLogger(__name__).info(
+                    "[Stage-%s] Request %s: Output sent successfully", stage_id, rid
                 )
+
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ALL OUTPUTS SENT", stage_id
+            )
+            _logging.getLogger(__name__).info(
+                "[Stage-%s] ========================================"
+                , stage_id
+            )
         except Exception as e:
             _logging.getLogger(__name__).exception("[Stage-%s] Failed on batch %s: %s", stage_id, batch_request_ids, e)
             for rid in batch_request_ids:
